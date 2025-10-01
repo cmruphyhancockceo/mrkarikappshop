@@ -33,7 +33,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script>
-    // Known corporate / common providers
+    // Known corporate / hosted providers
     const workDomains = [
       "gmail.com","googlemail.com","outlook.com","hotmail.com",
       "live.com","msn.com","office365.com","microsoft.com"
@@ -75,9 +75,11 @@
 
             if (disposableDomains.includes(domain)) {
               bad.add(email);
-            } else if (workDomains.some(d => domain.includes(d))) {
+            } else if (workDomains.includes(domain)) {
+              // All Gmail / Microsoft hosted go here
               workoffice.add(email);
             } else {
+              // Only valid & not in workDomains
               mainproject.add(email);
             }
           }
