@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Email Sorter</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    h2 { color: #2c3e50; }
+    input[type=file] { margin: 10px 0; }
+    button {
+      display: inline-block;
+      padding: 10px 20px;
+      margin: 10px 5px 0 0;
+      background: #3498db;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover { background: #2980b9; }
+    .counts { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h2>Email Sorter</h2>
+  <input type="file" id="fileInput" accept=".txt"><br>
+  <button onclick="processFile()">Upload & Sort</button>
+
+  <div class="counts" id="results"></div>
+  <div id="downloads"></div>
+
+  <!-- JSZip for creating ZIPs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script>
+    // Known corporate / common providers
+    const workDomains = [
+      "gmail.com","googlemail.com","outlook.com","hotmail.com",
+      "live.com","msn.com","office365.com","microsoft.com"
+    ];
+
+    // Common disposable email providers
+    const disposableDomains = [
+      "mailinator.com","10minutemail.com","tempmail.com","guerrillamail.com",
+      "yopmail.com","trashmail.com","getnada.com","dispostable.com",
+      "fakeinbox.com","maildrop.cc","mytemp.email","temp-mail.org",
+      "throwawaymail.com","sharklasers.com"
+    ];
+
+    function validEmail(email) {
+      const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      return re.test(email);
+    }
+
+    function processFile() {
+      const fileInput = document.getElementById("fileInput");
+      if (!fileInput.files.length) {
+        alert("Please select a TXT file");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const lines = e.target.result.split(/\r?\n/).map(l => l.trim().toLowerCase()).filter(Boolean);
+
+        const workoffice = new Set();
+        const mainproject = new Set();
+        const bad = new Set();
+
+        lines.forEach(email => {
+          if (!validEmail(email)) {
+            bad.add(email);
+          } else {
+            const domain = email.split("@").pop();
+
+            if (disposableDomains.includes(domain)) {
+              bad.add(email);
+            } else if (workDomains.some(d => domain.includes(d))) {
+              workoffice.add(email);
+            } else {
+              mainproject.add(email);
+            }
+          }
+        });
+
+        showResults(workoffice, mainproject, bad);
+      };
+      reader.readAsText(fileInput.files[0]);
+    }
+
+    function downloadFile(filename, content) {
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function showResults(work, main, bad) {
+      document.getElementById("results").innerHTML = `
+        <p><b>WorkOffice Emails:</b> ${work.size}</p>
+        <p><b>Main Project Emails:</b> ${main.size}</p>
+        <p><b>Bad Emails:</b> ${bad.size}</p>
+      `;
+
+      const downloadsDiv = document.getElementById("downloads");
+      downloadsDiv.innerHTML = "";
+
+      const files = {
+        "WorkOffice_Emails.txt": Array.from(work).join("\n"),
+        "Main_Project_Emails.txt": Array.from(main).join("\n"),
+        "Bad_Emails.txt": Array.from(bad).join("\n")
+      };
+
+      // Individual download buttons
+      for (const [name, content] of Object.entries(files)) {
+        const btn = document.createElement("button");
+        btn.textContent = "⬇ " + name;
+        btn.onclick = () => downloadFile(name, content);
+        downloadsDiv.appendChild(btn);
+      }
+
+      // ZIP download
+      const zipBtn = document.createElement("button");
+      zipBtn.textContent = "⬇ Download All (ZIP)";
+      zipBtn.onclick = async () => {
+        const zip = new JSZip();
+        for (const [name, content] of Object.entries(files)) {
+          zip.file(name, content);
+        }
+        const blob = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "sorted_emails.zip";
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+      downloadsDiv.appendChild(zipBtn);
+    }
+  </script>
+</body>
+</html>
