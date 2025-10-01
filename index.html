@@ -2,146 +2,102 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Email Sorter</title>
+  <title>Email Sorter (MX Lookup)</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 40px; }
     h2 { color: #2c3e50; }
-    input[type=file] { margin: 10px 0; }
-    button {
-      display: inline-block;
-      padding: 10px 20px;
-      margin: 10px 5px 0 0;
-      background: #3498db;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
+    .btn {
+      display: inline-block; padding: 10px 20px; margin: 10px 5px 0 0;
+      background: #3498db; color: white; text-decoration: none; border-radius: 5px;
     }
-    button:hover { background: #2980b9; }
-    .counts { margin-top: 20px; }
+    .btn:hover { background: #2980b9; }
+    input[type=file], input[type=submit] {
+      margin: 10px 0; padding: 10px;
+    }
+    input[type=submit] {
+      background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer;
+    }
+    input[type=submit]:hover { background: #219150; }
   </style>
 </head>
 <body>
-  <h2>Email Sorter</h2>
-  <input type="file" id="fileInput" accept=".txt"><br>
-  <button onclick="processFile()">Upload & Sort</button>
-
-  <div class="counts" id="results"></div>
-  <div id="downloads"></div>
-
-  <!-- JSZip for creating ZIPs -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <h2>Email Sorter (MX Lookup)</h2>
+  <form id="uploadForm">
+    <input type="file" id="fileInput" accept=".txt">
+    <input type="submit" value="Upload & Sort">
+  </form>
+  <div id="results"></div>
 
   <script>
-    // Known corporate / hosted providers
-    const workDomains = [
-      "gmail.com","googlemail.com","outlook.com","hotmail.com",
-      "live.com","msn.com","office365.com","microsoft.com"
-    ];
+    const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const DISPOSABLE = ["mailinator.com","10minutemail.com","tempmail.com","yopmail.com","trashmail.com"];
 
-    // Common disposable email providers
-    const disposableDomains = [
-      "mailinator.com","10minutemail.com","tempmail.com","guerrillamail.com",
-      "yopmail.com","trashmail.com","getnada.com","dispostable.com",
-      "fakeinbox.com","maildrop.cc","mytemp.email","temp-mail.org",
-      "throwawaymail.com","sharklasers.com"
-    ];
-
-    function validEmail(email) {
-      const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-      return re.test(email);
-    }
-
-    function processFile() {
-      const fileInput = document.getElementById("fileInput");
-      if (!fileInput.files.length) {
-        alert("Please select a TXT file");
-        return;
+    async function getMX(domain) {
+      try {
+        const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=MX`;
+        const res = await fetch(url, { headers: { "accept": "application/dns-json" }});
+        const data = await res.json();
+        if (!data.Answer) return "invalid";
+        const answers = data.Answer.map(a => a.data.toLowerCase());
+        if (answers.some(mx => mx.includes("google.com"))) return "google";
+        if (answers.some(mx => mx.includes("outlook.com") || mx.includes("microsoft.com") || mx.includes("office365.com"))) return "microsoft";
+        return "custom";
+      } catch (e) {
+        return "invalid";
       }
-
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const lines = e.target.result.split(/\r?\n/).map(l => l.trim().toLowerCase()).filter(Boolean);
-
-        const workoffice = new Set();
-        const mainproject = new Set();
-        const bad = new Set();
-
-        lines.forEach(email => {
-          if (!validEmail(email)) {
-            bad.add(email);
-          } else {
-            const domain = email.split("@").pop();
-
-            if (disposableDomains.includes(domain)) {
-              bad.add(email);
-            } else if (workDomains.includes(domain)) {
-              // All Gmail / Microsoft hosted go here
-              workoffice.add(email);
-            } else {
-              // Only valid & not in workDomains
-              mainproject.add(email);
-            }
-          }
-        });
-
-        showResults(workoffice, mainproject, bad);
-      };
-      reader.readAsText(fileInput.files[0]);
     }
 
     function downloadFile(filename, content) {
       const blob = new Blob([content], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
     }
 
-    function showResults(work, main, bad) {
-      document.getElementById("results").innerHTML = `
-        <p><b>WorkOffice Emails:</b> ${work.size}</p>
-        <p><b>Main Project Emails:</b> ${main.size}</p>
-        <p><b>Bad Emails:</b> ${bad.size}</p>
-      `;
+    document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const file = document.getElementById("fileInput").files[0];
+      if (!file) { alert("Please select a file"); return; }
 
-      const downloadsDiv = document.getElementById("downloads");
-      downloadsDiv.innerHTML = "";
+      const text = await file.text();
+      const emails = text.split(/\r?\n/).map(e => e.trim().toLowerCase()).filter(Boolean);
 
-      const files = {
-        "WorkOffice_Emails.txt": Array.from(work).join("\n"),
-        "Main_Project_Emails.txt": Array.from(main).join("\n"),
-        "Bad_Emails.txt": Array.from(bad).join("\n")
-      };
+      const workoffice = new Set();
+      const mainproject = new Set();
+      const bad = new Set();
 
-      // Individual download buttons
-      for (const [name, content] of Object.entries(files)) {
-        const btn = document.createElement("button");
-        btn.textContent = "⬇ " + name;
-        btn.onclick = () => downloadFile(name, content);
-        downloadsDiv.appendChild(btn);
+      const domainCache = {};
+
+      for (const email of emails) {
+        if (!EMAIL_REGEX.test(email)) { bad.add(email); continue; }
+        const domain = email.split("@")[1];
+        if (DISPOSABLE.includes(domain)) { bad.add(email); continue; }
+
+        if (!domainCache[domain]) {
+          domainCache[domain] = await getMX(domain);
+        }
+        const provider = domainCache[domain];
+
+        if (provider === "google" || provider === "microsoft") {
+          workoffice.add(email);
+        } else if (provider === "custom") {
+          mainproject.add(email);
+        } else {
+          bad.add(email);
+        }
       }
 
-      // ZIP download
-      const zipBtn = document.createElement("button");
-      zipBtn.textContent = "⬇ Download All (ZIP)";
-      zipBtn.onclick = async () => {
-        const zip = new JSZip();
-        for (const [name, content] of Object.entries(files)) {
-          zip.file(name, content);
-        }
-        const blob = await zip.generateAsync({ type: "blob" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "sorted_emails.zip";
-        a.click();
-        URL.revokeObjectURL(url);
-      };
-      downloadsDiv.appendChild(zipBtn);
-    }
+      document.getElementById("results").innerHTML = `
+        <h3>Sorting Complete ✅</h3>
+        <p><b>WorkOffice Emails:</b> ${workoffice.size}</p>
+        <p><b>Main Project Emails:</b> ${mainproject.size}</p>
+        <p><b>Bad Emails:</b> ${bad.size}</p>
+        <button class="btn" onclick="downloadFile('WorkOffice_Emails.txt', '${[...workoffice].join("\\n")}')">⬇ WorkOffice Emails</button>
+        <button class="btn" onclick="downloadFile('Main_Project_Emails.txt', '${[...mainproject].join("\\n")}')">⬇ Main Project Emails</button>
+        <button class="btn" onclick="downloadFile('Bad_Emails.txt', '${[...bad].join("\\n")}')">⬇ Bad Emails</button>
+      `;
+    });
   </script>
 </body>
 </html>
